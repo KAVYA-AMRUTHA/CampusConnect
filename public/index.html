@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CampusConnect | Faculty Appointments</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="/styles.css" rel="stylesheet">
+  <style>
+    .booking-workspace{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(280px,.85fr);gap:1rem}
+    .booking-panel{min-width:0}.date-strip{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:.45rem}
+    .date-chip{border:1px solid var(--bs-border-color,#dee2e6);background:var(--bs-body-bg,#fff);border-radius:14px;padding:.65rem .15rem;text-align:center;min-width:0;color:inherit}
+    .date-chip .day-label{display:block;font-size:.72rem;opacity:.7;text-transform:uppercase}
+    .date-chip .date-number{display:block;font-size:1.1rem;font-weight:700}
+    .date-chip.active{background:#243b53;color:#fff;border-color:#243b53}
+    .slot-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.65rem}
+    .slot-card{border:1px solid var(--bs-border-color,#dee2e6);border-radius:14px;padding:.85rem;text-align:left;background:var(--bs-body-bg,#fff);color:inherit;transition:transform .15s,border-color .15s}
+    .slot-card:hover{transform:translateY(-2px);border-color:#567895}
+    .slot-card.selected{border:2px solid #243b53;background:rgba(36,59,83,.07)}
+    .slot-card .slot-time{font-weight:750;font-size:1rem}.slot-card .slot-faculty{font-size:.85rem;margin-top:.25rem}
+    .slot-card .slot-dept{font-size:.76rem;opacity:.7;margin-top:.15rem}
+    .booking-summary{border:1px solid var(--bs-border-color,#dee2e6);border-radius:14px;padding:1rem;background:rgba(128,128,128,.04)}
+    .filter-grid{display:grid;grid-template-columns:1fr 1fr;gap:.7rem}
+    .section-kicker{font-size:.73rem;letter-spacing:.1em;text-transform:uppercase;font-weight:700;opacity:.65}
+    .empty-slots{border:1px dashed var(--bs-border-color,#dee2e6);border-radius:14px;padding:1.5rem;text-align:center;opacity:.8}
+    .calendar-nav{display:flex;align-items:center;justify-content:space-between;gap:.5rem}
+    @media(max-width:991px){.booking-workspace{grid-template-columns:1fr}}
+    @media(max-width:480px){.date-strip{gap:.25rem}.date-chip{border-radius:10px;padding:.5rem 0}.date-chip .date-number{font-size:.95rem}.slot-grid,.filter-grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark app-nav">
+  <div class="container">
+    <a class="navbar-brand fw-bold" href="#">Campus<span>Connect</span></a>
+    <div class="d-flex gap-2 align-items-center">
+      <span id="navUser" class="small text-white-50"></span>
+      <button id="logoutBtn" class="btn btn-outline-light btn-sm d-none">Log out</button>
+    </div>
+  </div>
+</nav>
+
+<main class="container py-4 py-lg-5">
+  <section id="authView" class="auth-layout">
+    <div class="hero-panel">
+      <span class="eyebrow">YOUR CAMPUS, CONNECTED</span>
+      <h1>Make time for the conversations that matter.</h1>
+      <p>Book a one-to-one meeting with your faculty, find a suitable time, and keep every appointment in one place.</p>
+      <div class="hero-points"><span>✓ Clear availability</span><span>✓ Booking status updates</span><span>✓ Appointment history</span></div>
+    </div>
+    <div class="auth-card">
+      <div class="d-flex gap-2 mb-4">
+        <button class="btn tab-btn active" id="loginTab">Log in</button>
+        <button class="btn tab-btn" id="registerTab">Create account</button>
+      </div>
+      <form id="loginForm">
+        <h2>Welcome back</h2><p class="muted mb-4">Sign in to manage your campus appointments.</p>
+        <label class="form-label">Email address</label><input class="form-control mb-3" type="email" name="email" required>
+        <label class="form-label">Password</label><input class="form-control mb-4" type="password" name="password" required>
+        <button class="btn btn-primary w-100">Log in</button>
+      </form>
+      <form id="registerForm" class="d-none">
+        <h2>Create your account</h2><p class="muted mb-4">Student accounts are created with the student role.</p>
+        <label class="form-label">Full name</label><input class="form-control mb-3" name="name" required maxlength="100">
+        <label class="form-label">Email address</label><input class="form-control mb-3" type="email" name="email" required>
+        <label class="form-label">Department</label><input class="form-control mb-3" name="department" placeholder="e.g. CSE-AIML">
+        <label class="form-label">Password (at least 8 characters)</label><input class="form-control mb-4" type="password" name="password" minlength="8" required>
+        <button class="btn btn-primary w-100">Create account</button>
+      </form>
+      <div id="authMessage" class="mt-3" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <section id="appView" class="d-none">
+    <div class="dashboard-heading">
+      <div><span class="eyebrow">CAMPUSCONNECT / APPOINTMENTS</span><h1 id="welcomeTitle">Your dashboard</h1><p id="dashboardDescription" class="muted mb-0">Manage your campus appointments.</p></div>
+      <span id="rolePill" class="role-pill">STUDENT</span>
+    </div>
+    <div id="statsRow" class="row g-3 my-3"></div>
+
+    <div id="studentPanel" class="row g-4 d-none">
+      <div class="col-12">
+        <div class="panel">
+          <div class="panel-heading">
+            <div><span class="section-kicker">Find a time that works</span><h3 class="mt-1 mb-1">Book an appointment</h3><p class="mb-0">Choose a date, filter faculty, then select an available time.</p></div>
+            <span class="panel-icon">＋</span>
+          </div>
+          <div class="booking-workspace mt-3">
+            <div class="booking-panel">
+              <div class="calendar-nav mb-3">
+                <div><div class="section-kicker">Choose a date</div><div id="calendarMonth" class="fw-bold"></div></div>
+                <div class="d-flex gap-2"><button type="button" id="previousWeek" class="btn btn-light btn-sm" aria-label="Previous dates">‹</button><button type="button" id="nextWeek" class="btn btn-light btn-sm" aria-label="Next dates">›</button></div>
+              </div>
+              <div id="dateStrip" class="date-strip mb-3" aria-label="Available dates"></div>
+              <label for="slotDate" class="form-label small">Or choose a specific date</label>
+              <input type="date" id="slotDate" class="form-control mb-3" required>
+              <div class="filter-grid mb-3">
+                <div><label for="departmentFilter" class="form-label">Department</label><select id="departmentFilter" class="form-select"><option value="">All departments</option></select></div>
+                <div><label for="facultyFilter" class="form-label">Faculty</label><select id="facultyFilter" class="form-select"><option value="">All faculty</option></select></div>
+              </div>
+              <div class="d-flex align-items-center justify-content-between gap-2 mb-2"><h5 class="mb-0">Available slots</h5><span id="slotCount" class="small muted"></span></div>
+              <div id="slotCards" class="slot-grid"><div class="empty-slots">Choose a date to view available times.</div></div>
+              <select id="slotSelect" class="d-none" required aria-hidden="true" tabindex="-1"><option value="">Choose a date first</option></select>
+            </div>
+            <div class="booking-panel">
+              <div class="booking-summary mb-3">
+                <div class="section-kicker mb-2">Your selection</div>
+                <h5 id="selectedSlotTitle">No time selected yet</h5>
+                <div id="selectedSlotDetails" class="muted small">Select an available slot to see the booking summary.</div>
+              </div>
+              <form id="bookingForm">
+                <label class="form-label" for="service">Purpose / service</label>
+                <input id="service" class="form-control mb-3" maxlength="160" placeholder="e.g. Project guidance" required>
+                <label class="form-label" for="message">Message (optional)</label>
+                <textarea id="message" class="form-control mb-3" rows="4" maxlength="1000" placeholder="Briefly describe what you want to discuss"></textarea>
+                <button id="confirmBookingBtn" class="btn btn-primary w-100" disabled>Confirm appointment</button>
+              </form>
+              <div id="bookingMessage" class="mt-3" aria-live="polite"></div>
+              <p class="small muted mt-3 mb-0">Your appointment remains subject to faculty approval. The slot is secured by the server when you confirm.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-7">
+        <div class="panel"><div class="panel-heading"><div><h3>My appointments</h3><p>Your upcoming and previous bookings.</p></div><button class="btn btn-light btn-sm" id="refreshMine">Refresh</button></div><div id="myAppointments" class="table-responsive"></div></div>
+      </div>
+      <div class="col-lg-5">
+        <div class="panel h-100"><div class="panel-heading"><div><h3>Notifications</h3><p>Booking confirmations and status changes.</p></div></div><div id="notifications"></div></div>
+      </div>
+    </div>
+
+    <!-- ADMIN ANALYTICS: rendered only for administrator accounts -->
+    <section id="adminAnalytics" class="d-none mb-4" aria-labelledby="analyticsTitle">
+      <div class="panel">
+        <div class="panel-heading">
+          <div><span class="section-kicker">CAMPUS INSIGHTS</span><h3 id="analyticsTitle" class="mt-1 mb-1">Appointment analytics</h3><p class="mb-0">A live overview of appointment demand and faculty workload.</p></div>
+          <button type="button" class="btn btn-light btn-sm" id="refreshAnalytics">Refresh analytics</button>
+        </div>
+        <div id="analyticsKpis" class="row g-3 mt-1"></div>
+        <div class="row g-4 mt-1">
+          <div class="col-lg-6"><div class="border rounded-4 p-3 h-100"><h5>Appointment status</h5><p class="small muted">Distribution across current bookings.</p><div style="height:270px"><canvas id="statusChart" aria-label="Appointments by status"></canvas></div></div></div>
+          <div class="col-lg-6"><div class="border rounded-4 p-3 h-100"><h5>Bookings by department</h5><p class="small muted">Departments with the highest appointment demand.</p><div style="height:270px"><canvas id="departmentChart" aria-label="Appointments by department"></canvas></div></div></div>
+          <div class="col-12"><div class="border rounded-4 p-3"><h5>Recent booking activity</h5><p class="small muted">Most recently scheduled appointments.</p><div id="analyticsRecent" class="table-responsive"></div></div></div>
+          <div class="col-12"><div class="border rounded-4 p-3"><h5>Faculty workload</h5><p class="small muted">Number of appointments assigned to each faculty member.</p><div style="height:300px"><canvas id="facultyChart" aria-label="Faculty workload chart"></canvas></div></div></div>
+        </div>
+        <p class="small muted mt-3 mb-0">Analytics use appointment records available to the administrator. Cancelled bookings remain included in total counts.</p>
+      </div>
+    </section>
+
+    <div id="staffPanel" class="d-none">
+      <div class="row g-4">
+        <div id="facultyCreateCard" class="col-lg-4"><div class="panel"><h3>Add faculty member</h3><p class="muted">Create a faculty login.</p>
+          <form id="facultyForm"><label class="form-label">Full name</label><input name="name" class="form-control mb-2" required>
+            <label class="form-label">Email</label><input name="email" type="email" class="form-control mb-2" required>
+            <label class="form-label">Temporary password</label><input name="password" type="password" minlength="8" class="form-control mb-2" required>
+            <label class="form-label">Department</label><input name="department" class="form-control mb-3" value="CSE-AIML">
+            <button class="btn btn-primary w-100">Create faculty</button></form><div id="facultyMessage" class="mt-2"></div>
+        </div></div>
+        <div id="availabilityColumn" class="col-lg-4"><div class="panel"><h3 id="availabilityHeading">Manage availability</h3><p id="availabilityDescription" class="muted">Add a date and time slot.</p>
+          <form id="availabilityForm"><div id="facultyPickerGroup"><label class="form-label">Faculty</label><select name="providerId" id="facultySelect" class="form-select mb-2"><option value="">Choose faculty</option></select></div>
+            <label class="form-label">Date</label><input name="date" id="availabilityDate" type="date" class="form-control mb-2" required>
+            <div class="row"><div class="col"><label class="form-label">Start</label><input name="startTime" type="time" class="form-control mb-2" required></div><div class="col"><label class="form-label">End</label><input name="endTime" type="time" class="form-control mb-2" required></div></div>
+            <button class="btn btn-primary w-100">Add available slot</button></form><div id="availabilityMessage" class="mt-2"></div>
+        </div></div>
+        <div id="appointmentsColumn" class="col-lg-8"><div class="panel"><div class="panel-heading"><div><h3 id="appointmentsHeading">All appointments</h3><p id="appointmentsDescription">Review and manage appointment requests.</p></div><button class="btn btn-light btn-sm" id="refreshAll">Refresh</button></div><div class="panel mb-3" id="qrScannerPanel">
+          <div class="panel-heading"><div><h3>Verify appointment QR</h3><p>Scan the student's pass and verify it against MongoDB.</p></div><button type="button" class="btn btn-primary btn-sm" id="startScannerBtn">Start scanner</button></div>
+          <p id="qrScannerHelp" class="small muted">Camera scanning works on localhost or HTTPS. You can also paste the token manually.</p>
+          <div id="qr-reader" class="mb-3" style="display:none;max-width:480px"></div>
+          <form id="manualVerifyForm" class="row g-2"><div class="col-sm-8"><label for="manualQrToken" class="form-label">QR token</label><input id="manualQrToken" class="form-control" required placeholder="Paste token from QR"></div><div class="col-sm-4 d-flex align-items-end"><button class="btn btn-outline-primary w-100">Verify token</button></div></form>
+          <div id="qrVerifyResult" class="mt-3" aria-live="polite"></div>
+        </div>
+        <div id="allAppointments" class="table-responsive"></div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DIGITAL APPOINTMENT PASS -->
+  <div class="modal fade" id="appointmentPassModal" tabindex="-1" aria-labelledby="appointmentPassTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content border-0 rounded-4 overflow-hidden">
+        <div class="modal-header text-white" style="background:#243b53">
+          <div>
+            <div class="small text-white-50">CAMPUSCONNECT · DIGITAL PASS</div>
+            <h5 class="modal-title" id="appointmentPassTitle">Appointment pass</h5>
+          </div>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-4">
+          <div class="text-center mb-3">
+            <div id="appointmentQrCode" class="d-inline-flex align-items-center justify-content-center p-3 bg-white border rounded-3" style="min-width:180px;min-height:180px"></div>
+            <p class="small muted mt-2 mb-0">Show this QR code with your booking ID when attending.</p>
+          </div>
+          <div class="text-center mb-3">
+            <div class="small muted">BOOKING ID</div>
+            <div id="passBookingId" class="fs-4 fw-bold"></div>
+            <div id="passStatus" class="mt-2"></div>
+          </div>
+          <div class="border rounded-3 p-3">
+            <div class="row g-3">
+              <div class="col-6"><div class="small muted">Student</div><div id="passStudent" class="fw-semibold"></div></div>
+              <div class="col-6"><div class="small muted">Faculty</div><div id="passFaculty" class="fw-semibold"></div></div>
+              <div class="col-6"><div class="small muted">Date</div><div id="passDate" class="fw-semibold"></div></div>
+              <div class="col-6"><div class="small muted">Time</div><div id="passTime" class="fw-semibold"></div></div>
+              <div class="col-12"><div class="small muted">Purpose</div><div id="passPurpose" class="fw-semibold"></div></div>
+            </div>
+          </div>
+          <div class="small muted mt-3">Keep this pass for your records. The QR contains appointment details for display; it is not a secure identity check by itself.</div>
+          <div id="passMessage" class="mt-2 small" aria-live="polite"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" id="downloadPassQr" class="btn btn-outline-primary">Download QR</button>
+          <button type="button" id="printAppointmentPass" class="btn btn-primary">Print pass</button>
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast-message d-none" role="status"></div>
+  <footer>CampusConnect · College Faculty Appointment Booking · Web Technologies Lab</footer>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
