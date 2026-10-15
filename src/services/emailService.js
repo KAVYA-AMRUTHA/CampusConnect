@@ -1,4 +1,4 @@
-```javascript
+
 const nodemailer = require("nodemailer");
 
 function getTransporter() {
@@ -99,4 +99,3 @@ function appointmentEmail({
 }
 
 module.exports = { sendEmail, appointmentEmail };
-```
