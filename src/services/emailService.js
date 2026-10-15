@@ -1,20 +1,33 @@
 
-const nodemailer = require("nodemailer");
+const { google } = require("googleapis");
 
-function getTransporter() {
-  const user = process.env.EMAIL_USER;
-  const pass = String(process.env.EMAIL_APP_PASSWORD || "").replace(/\s+/g, "");
+function getGmailClient() {
+  const {
+    GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET,
+    GOOGLE_REFRESH_TOKEN
+  } = process.env;
 
-  if (!user || !pass) return null;
+  if (
+    !GOOGLE_CLIENT_ID ||
+    !GOOGLE_CLIENT_SECRET ||
+    !GOOGLE_REFRESH_TOKEN
+  ) {
+    return null;
+  }
 
-  return nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 465,
-    secure: true,
-    auth: { user, pass },
-    connectionTimeout: 20000,
-    greetingTimeout: 20000,
-    socketTimeout: 20000
+  const auth = new google.auth.OAuth2(
+    GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET
+  );
+
+  auth.setCredentials({
+    refresh_token: GOOGLE_REFRESH_TOKEN
+  });
+
+  return google.gmail({
+    version: "v1",
+    auth
   });
 }
 
@@ -28,32 +41,112 @@ function escapeHtml(value) {
   }[ch]));
 }
 
-async function sendEmail({ to, subject, text, html }) {
-  const transporter = getTransporter();
+function safeHeader(value) {
+  return String(value ?? "").replace(/[\r\n]/g, " ");
+}
 
-  if (!transporter) {
-    console.warn("Email not sent: EMAIL_USER or EMAIL_APP_PASSWORD is not configured.");
-    return { sent: false, reason: "Email is not configured." };
+function encodeSubject(value) {
+  return `=?UTF-8?B?${Buffer.from(String(value), "utf8").toString("base64")}?=`;
+}
+
+function createRawMessage({ from, to, subject, text, html }) {
+  const boundary = `cc_${Date.now()}_${Math.random()
+    .toString(36).slice(2)}`;
+
+  const headers = [
+    `From: ${safeHeader(from)}`,
+    `To: ${safeHeader(to)}`,
+    `Subject: ${encodeSubject(safeHeader(subject))}`,
+    "MIME-Version: 1.0"
+  ];
+
+  let message;
+
+  if (html) {
+    headers.push(
+      `Content-Type: multipart/alternative; boundary="${boundary}"`
+    );
+
+    message = [
+      ...headers,
+      "",
+      `--${boundary}`,
+      'Content-Type: text/plain; charset="UTF-8"',
+      "Content-Transfer-Encoding: base64",
+      "",
+      Buffer.from(text || "", "utf8").toString("base64"),
+      `--${boundary}`,
+      'Content-Type: text/html; charset="UTF-8"',
+      "Content-Transfer-Encoding: base64",
+      "",
+      Buffer.from(html, "utf8").toString("base64"),
+      `--${boundary}--`,
+      ""
+    ].join("\r\n");
+  } else {
+    headers.push(
+      'Content-Type: text/plain; charset="UTF-8"',
+      "Content-Transfer-Encoding: base64"
+    );
+
+    message = [
+      ...headers,
+      "",
+      Buffer.from(text || "", "utf8").toString("base64"),
+      ""
+    ].join("\r\n");
   }
 
+  return Buffer.from(message, "utf8").toString("base64url");
+}
+
+async function sendEmail({ to, subject, text, html }) {
   if (!to) {
     return { sent: false, reason: "Recipient email is missing." };
   }
 
+  const gmail = getGmailClient();
+
+  if (!gmail) {
+    console.error(
+      "Email not sent: Gmail API credentials are missing."
+    );
+    return { sent: false, reason: "Gmail API is not configured." };
+  }
+
+  const emailUser = process.env.EMAIL_USER;
+  const from = process.env.EMAIL_FROM || emailUser;
+
+  if (!emailUser || !from) {
+    console.error("Email not sent: EMAIL_USER or EMAIL_FROM is missing.");
+    return { sent: false, reason: "Sender email is not configured." };
+  }
+
   try {
-    await transporter.sendMail({
-      from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
-      to,
-      subject,
-      text,
-      html
+    const response = await gmail.users.messages.send({
+      userId: "me",
+      requestBody: {
+        raw: createRawMessage({ from, to, subject, text, html })
+      }
     });
 
-    console.log("Email accepted by SMTP server.");
-    return { sent: true };
+    console.log("Email accepted by Gmail API:", response.data.id);
+
+    return {
+      sent: true,
+      messageId: response.data.id
+    };
   } catch (error) {
-    console.error("Email delivery failed:", error.code || "", error.message);
-    return { sent: false, reason: error.message };
+    console.error(
+      "Gmail API delivery failed:",
+      error.code || "",
+      error.message
+    );
+
+    return {
+      sent: false,
+      reason: error.message || "Gmail API request failed."
+    };
   }
 }
 
@@ -82,13 +175,39 @@ function appointmentEmail({
     ["Status", status]
   ];
 
-  const text = `${message}\n\n${fields.map(([label, value]) => `${label}: ${value}`).join("\n")}\n\nCampusConnect — College Faculty Appointment Booking System`;
+  const text = `${message}\n\n${fields
+    .map(([label, value]) => `${label}: ${value}`)
+    .join("\n")}\n\nCampusConnect — College Faculty Appointment Booking System`;
 
   const rows = fields.map(([label, value]) =>
-    `<tr><td style="padding:8px 12px;color:#64748b;border-bottom:1px solid #e2e8f0">${escapeHtml(label)}</td><td style="padding:8px 12px;font-weight:600;border-bottom:1px solid #e2e8f0">${escapeHtml(value)}</td></tr>`
+    `<tr>
+      <td style="padding:8px 12px;color:#64748b;border-bottom:1px solid #e2e8f0">
+        ${escapeHtml(label)}
+      </td>
+      <td style="padding:8px 12px;font-weight:600;border-bottom:1px solid #e2e8f0">
+        ${escapeHtml(value)}
+      </td>
+    </tr>`
   ).join("");
 
-  const html = `<!doctype html><html><body style="margin:0;background:#f1f5f9;font-family:Arial,sans-serif;color:#0f172a;padding:24px"><div style="max-width:620px;margin:auto;background:#fff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0"><div style="background:#243b53;color:#fff;padding:24px"><div style="font-size:12px;letter-spacing:2px;color:#cbd5e1">CAMPUSCONNECT</div><h1 style="font-size:22px;margin:10px 0 0">${escapeHtml(subjectPrefix)}</h1></div><div style="padding:24px"><p>${escapeHtml(message)}</p><table style="width:100%;border-collapse:collapse">${rows}</table><p style="font-size:12px;color:#64748b;margin-top:24px">This is an automated email from CampusConnect. Please do not reply directly to this message.</p></div></div></body></html>`;
+  const html = `<!doctype html>
+<html>
+<body style="margin:0;background:#f1f5f9;font-family:Arial,sans-serif;color:#0f172a;padding:24px">
+  <div style="max-width:620px;margin:auto;background:#fff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0">
+    <div style="background:#243b53;color:#fff;padding:24px">
+      <div style="font-size:12px;letter-spacing:2px;color:#cbd5e1">CAMPUSCONNECT</div>
+      <h1 style="font-size:22px;margin:10px 0 0">${escapeHtml(subjectPrefix)}</h1>
+    </div>
+    <div style="padding:24px">
+      <p>${escapeHtml(message)}</p>
+      <table style="width:100%;border-collapse:collapse">${rows}</table>
+      <p style="font-size:12px;color:#64748b;margin-top:24px">
+        This is an automated email from CampusConnect. Please do not reply directly to this message.
+      </p>
+    </div>
+  </div>
+</body>
+</html>`;
 
   return sendEmail({
     to,
